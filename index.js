@@ -105,7 +105,10 @@ Protocol.prototype._onheader = function() {
     case 3:
     this._nextCalled = false
     this._stream = new stream.PassThrough()
-    this.emit('blob', this._stream, this._next)
+    if (!this.emit('blob', this._stream, this._next)) {
+      this._stream.resume()
+      this._next()
+    }
     return
   }
 
@@ -123,11 +126,11 @@ Protocol.prototype._onbufferdone = function(cb) {
 
   switch (this._type) {
     case 0:
-    return this.emit('meta', JSON.parse(buf.toString()), cb)
+    return this.emit('meta', JSON.parse(buf.toString()), cb) || cb()
     case 1:
-    return this.emit('document', JSON.parse(buf.toString()), cb)
+    return this.emit('document', JSON.parse(buf.toString()), cb) || cb()
     case 2:
-    return this.emit('raw', buf, cb)
+    return this.emit('protobuf', buf, cb) || cb()
   }
 }
 
@@ -153,7 +156,7 @@ Protocol.prototype.document = function(doc, cb) {
   this._push(buf, cb || noop)
 }
 
-Protocol.prototype.raw = function(buf, cb) {
+Protocol.prototype.protobuf = function(buf, cb) {
   this._header(2, buf.length)
   this._push(buf, cb || noop)
 }
