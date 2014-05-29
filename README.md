@@ -83,13 +83,17 @@ The binary encoding of the protocol is as follows:
 -------------------------------------------------------------
 ```
 
-A stream consists of a multiple packets that follow the above format
+A stream consists of a multiple packets that follow the above format.
 Currently the following types are defined
 
-1. meta info (like schema, change number, etc)
-2. document encoded as JSON
-3. document encoded as protobuf
-4. blob (should be interpreted as a stream)
+type           | description
+-------------- | ------------
+1              | meta info (like schema, change number, etc)
+2              | document encoded as JSON
+3              | document encoded as protobuf
+4              | blob (should be interpreted as a stream)
+
+
 
 ## License
 
