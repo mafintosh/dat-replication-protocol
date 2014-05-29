@@ -4,6 +4,9 @@ Streaming implementation of the dat replication protocol
 
   npm install dat-replication-protocol
 
+[![build status](http://img.shields.io/travis/mafintosh/dat-replication-protocol.svg?style=flat)](http://travis-ci.org/mafintosh/dat-replication-protocol)
+![dat](http://img.shields.io/badge/Development%20sponsored%20by-dat-green.svg?style=flat)
+
 The dat replication protocol is a duplex stream that can parse and produce the protocol
 
 ## Parsing
@@ -76,9 +79,7 @@ The binary encoding of the protocol is as follows:
 
 ```
 -------------------------------------------------------------
-|                  |                            |           |
 |  type as varint  |  payload length as varint  |  payload  |
-|                  |                            |           |
 -------------------------------------------------------------
 ```
 
