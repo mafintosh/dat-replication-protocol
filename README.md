@@ -9,8 +9,6 @@ npm install dat-replication-protocol
 [![build status](http://img.shields.io/travis/mafintosh/dat-replication-protocol.svg?style=flat)](http://travis-ci.org/mafintosh/dat-replication-protocol)
 ![dat](http://img.shields.io/badge/Development%20sponsored%20by-dat-green.svg?style=flat)
 
-The dat replication protocol is a duplex stream that can parse and produce the protocol
-
 ## Parsing
 
 Pipe a stream to a protocol instance to parse it
