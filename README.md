@@ -75,11 +75,11 @@ p.pipe(someWritableStream)
 The binary encoding of the protocol is as follows:
 
 ```
-#############################################################
-#                  #                            #           #
-#  type as varint  #  payload length as varint  #  payload  #
-#                  #                            #           #
-#############################################################
+-------------------------------------------------------------
+|                  |                            |           |
+|  type as varint  |  payload length as varint  |  payload  |
+|                  |                            |           |
+-------------------------------------------------------------
 ```
 
 A stream consists of a multiple packets that follow the above format
