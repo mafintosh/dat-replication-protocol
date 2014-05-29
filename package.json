@@ -1,0 +1,29 @@
+{
+  "name": "dat-replication-protocol",
+  "version": "0.0.0",
+  "description": "streaming implementation of the dat replication protocol",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/mafintosh/dat-replication-protocol"
+  },
+  "keywords": [
+    "dat",
+    "replication",
+    "protocol",
+    "stream",
+    "binary"
+  ],
+  "author": "Mathias Buus",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mafintosh/dat-replication-protocol/issues"
+  },
+  "homepage": "https://github.com/mafintosh/dat-replication-protocol",
+  "dependencies": {
+    "varint": "^1.2.0"
+  }
+}
