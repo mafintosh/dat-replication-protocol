@@ -62,7 +62,7 @@ Protocol.prototype._write = function(data, enc, cb) {
 
     this._onheader()
     if (i === data.length-1) return cb()
-    return this._write(data.slice(i), enc, cb)
+    return this._write(data.slice(i+1), enc, cb)
   }
 
   cb()
