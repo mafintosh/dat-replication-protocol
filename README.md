@@ -18,6 +18,11 @@ var protocol = require('dat-replication-protocol')
 
 var p = protocol()
 
+p.on('warn', function(warning, cb) {
+  console.log('warning (possible a conflict)', warning)
+  cb()
+})
+
 p.on('meta', function(meta, cb) {
   console.log('found meta info', meta)
   cb()
@@ -50,6 +55,10 @@ Pipe the protocol instance somewhere else and produce the packets you want to se
 
 ``` js
 var p = protocol()
+
+p.warning({conflict:true, key:'some-key'}, function() {
+  console.log('warning sent')
+})
 
 p.meta({change:10}, function() {
   console.log('meta info sent')
