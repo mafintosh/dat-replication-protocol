@@ -97,11 +97,12 @@ Currently the following types are defined
 
 type           | description
 -------------- | ------------
-1              | meta info (like schema, change number, etc)
-2              | document encoded as JSON
-3              | document encoded as protobuf
-4              | blob (should be interpreted as a stream)
-
+0              | meta info (like schema, change number, etc)
+1              | document encoded as JSON
+2              | document encoded as protobuf
+3              | blob (should be interpreted as a stream)
+4              | warning encoded as JSON
+5              | ping (can be ignored)
 
 
 ## License
