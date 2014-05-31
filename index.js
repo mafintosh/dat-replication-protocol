@@ -33,6 +33,7 @@ var Protocol = function() {
   this._headerPointer = 0
   this._headerBuffer = new Buffer(50)
   this._ondrain = null
+  this._finalized = false
 
   this._cb = null
   this._nextCalled = false
@@ -181,15 +182,20 @@ Protocol.prototype.ping = function() {
 }
 
 Protocol.prototype.finalize = function() {
+  if (this._finalized) return
+  this._finalized = true
   this.push(null)
 }
 
 Protocol.prototype._push = function(data, cb) {
+  if (this._finalized) return cb(new Error('Stream has been finalized'))
   if (this.push(data)) cb()
   else this._ondrain = cb
 }
 
 Protocol.prototype._header = function(type, len) {
+  if (this._finalized) return
+
   if (pool.length - used < 50) {
     used = 0
     pool = new Buffer(5012)
