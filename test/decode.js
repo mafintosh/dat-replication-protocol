@@ -7,6 +7,8 @@ var input = function() {
   var p = protocol()
 
   p.meta({change:1})
+  p.ping()
+  p.warn({conflict:true})
   p.document({hello:'world'})
   var bl = p.blob(11)
   bl.write('hello ')
@@ -79,9 +81,20 @@ tape('multiple', function(t) {
   var hadProto = false
   var hadDoc = false
   var hadBlob = false
+  var hadWarn = false
+  var hadPing = false
 
   p.on('meta', function(meta, cb) {
     hadMeta = true
+    cb()
+  })
+
+  p.on('ping', function() {
+    hadPing = true
+  })
+
+  p.on('warn', function(warning, cb) {
+    hadWarn = true
     cb()
   })
 
@@ -106,6 +119,8 @@ tape('multiple', function(t) {
     t.ok(hadProto, 'had protobuf')
     t.ok(hadMeta, 'had meta')
     t.ok(hadDoc, 'had document')
+    t.ok(hadWarn, 'had warning')
+    t.ok(hadPing, 'had ping')
     t.end()
   })
 

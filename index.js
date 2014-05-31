@@ -2,6 +2,8 @@ var stream = require('stream')
 var varint = require('varint')
 var util = require('util')
 
+var PING = new Buffer('ping')
+
 var pool = new Buffer(5012)
 var used = 0
 var noop = function() {}
@@ -97,12 +99,7 @@ Protocol.prototype._onheader = function() {
   this._type = varint.decode(this._headerBuffer)
   this._missing = varint.decode(this._headerBuffer, varint.decode.bytesRead)
 
-  switch (this._type) {
-    case 0:
-    case 1:
-    case 2:
-    return this._buffer = new Buffer(this._missing)
-    case 3:
+  if (this._type === 3) {
     this._nextCalled = false
     this._stream = new stream.PassThrough()
     if (!this.emit('blob', this._stream, this._next)) {
@@ -112,6 +109,7 @@ Protocol.prototype._onheader = function() {
     return
   }
 
+  this._buffer = new Buffer(this._missing)
 }
 
 Protocol.prototype._onstreamdone = function(cb) {
@@ -131,6 +129,11 @@ Protocol.prototype._onbufferdone = function(cb) {
     return this.emit('document', JSON.parse(buf.toString()), cb) || cb()
     case 2:
     return this.emit('protobuf', buf, cb) || cb()
+    case 4:
+    return this.emit('warn', JSON.parse(buf.toString()), cb) || cb()
+    case 5:
+    this.emit('ping')
+    return cb()
   }
 }
 
@@ -164,6 +167,17 @@ Protocol.prototype.protobuf = function(buf, cb) {
 Protocol.prototype.blob = function(length, cb) {
   this._header(3, length)
   return new Sink(this, cb)
+}
+
+Protocol.prototype.warn = function(message, cb) {
+  var buf = new Buffer(JSON.stringify(message))
+  this._header(4, buf.length)
+  this._push(buf, cb || noop)
+}
+
+Protocol.prototype.ping = function() {
+  this._header(5, PING.length)
+  this._push(PING, noop)
 }
 
 Protocol.prototype.finalize = function() {
