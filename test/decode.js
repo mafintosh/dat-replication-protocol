@@ -114,7 +114,7 @@ tape('multiple', function(t) {
     cb()
   })
 
-  p.on('finish', function() {
+  p.on('finalize', function() {
     t.ok(hadBlob, 'had blob')
     t.ok(hadProto, 'had protobuf')
     t.ok(hadMeta, 'had meta')

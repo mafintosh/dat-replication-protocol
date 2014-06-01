@@ -13,7 +13,7 @@ tape('meta', function(t) {
   }))
 
   p.meta({change:1})
-  p.finalize()
+  p.end()
 })
 
 tape('document', function(t) {
@@ -27,7 +27,7 @@ tape('document', function(t) {
   }))
 
   p.document({hello:'world'})
-  p.finalize()
+  p.end()
 })
 
 tape('protobuf', function(t) {
@@ -41,7 +41,7 @@ tape('protobuf', function(t) {
   }))
 
   p.protobuf(new Buffer('should be protobuf'))
-  p.finalize()
+  p.end()
 })
 
 tape('blob', function(t) {
@@ -60,5 +60,5 @@ tape('blob', function(t) {
   bl.write(' ')
   bl.write('world')
 
-  p.finalize()
+  p.end()
 })

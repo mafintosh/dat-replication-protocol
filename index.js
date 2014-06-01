@@ -22,6 +22,7 @@ Sink.prototype._write = function(data, enc, cb) {
 
 var Protocol = function() {
   if (!(this instanceof Protocol)) return new Protocol()
+  stream.Duplex.call(this)
 
   var self = this
 
@@ -33,6 +34,7 @@ var Protocol = function() {
   this._headerPointer = 0
   this._headerBuffer = new Buffer(50)
   this._ondrain = null
+  this._ended = false
   this._finalized = false
 
   this._cb = null
@@ -45,7 +47,9 @@ var Protocol = function() {
     cb()
   }
 
-  stream.Duplex.call(this)
+  this.on('finish', function() {
+    this._end() // no half open
+  })
 }
 
 util.inherits(Protocol, stream.Duplex)
@@ -61,9 +65,9 @@ Protocol.prototype._write = function(data, enc, cb) {
     this._headerBuffer[this._headerPointer++] = data[i]
     if (this._msbs) continue
 
-    this._onheader()
-    if (i === data.length-1) return cb()
-    return this._write(data.slice(i+1), enc, cb)
+    if (i === data.length-1) this._onheader(cb)
+    else this._onheader(this._rewrite(data.slice(i+1), cb))
+    return
   }
 
   cb()
@@ -93,20 +97,22 @@ Protocol.prototype._forward = function(data, cb) {
   this._onstreamdone(cb)
 }
 
-Protocol.prototype._onheader = function() {
+Protocol.prototype._onheader = function(cb) {
   this._headerPointer = 0
   this._msbs = 2
 
   this._type = varint.decode(this._headerBuffer)
   this._missing = varint.decode(this._headerBuffer, varint.decode.bytesRead)
 
-  if (this._type > 5) {
-    this._nextCalled = true
-    this._stream = new stream.PassThrough()
-    this._stream.resume()
-    return
-  }
-  if (this._type === 3) {
+  switch (this._type) {
+    case 0:
+    case 1:
+    case 2:
+    case 4:
+    this._buffer = new Buffer(this._missing)
+    return cb()
+
+    case 3:
     this._nextCalled = false
     this._stream = new stream.PassThrough()
     this.emit('transfer', 'blob')
@@ -114,10 +120,23 @@ Protocol.prototype._onheader = function() {
       this._stream.resume()
       this._next()
     }
-    return
-  }
+    return cb()
 
-  this._buffer = new Buffer(this._missing)
+    case 5:
+    this.emit('ping')
+    return cb()
+
+    case 6:
+    cb = this._finalizer(cb)
+    this.emit('finalize', cb) || cb()
+    return
+
+    default:
+    this._nextCalled = true
+    this._stream = new stream.PassThrough()
+    this._stream.resume()
+    cb()
+  }
 }
 
 Protocol.prototype._onstreamdone = function(cb) {
@@ -143,9 +162,6 @@ Protocol.prototype._onbufferdone = function(cb) {
     case 4:
     this.emit('transfer', 'conflict')
     return this.emit('conflict', JSON.parse(buf.toString()), cb) || cb()
-    case 5:
-    this.emit('ping')
-    return cb()
   }
 
   cb()
@@ -194,25 +210,25 @@ Protocol.prototype.conflict = function(message, cb) {
   this.emit('transfer', 'conflict')
 }
 
-Protocol.prototype.ping = function() {
-  this._header(5, PING.length)
-  this._push(PING, noop)
+Protocol.prototype.ping = function(cb) {
+  this._header(5, 0)
+  if (cb) cb()
 }
 
-Protocol.prototype.finalize = function() {
-  if (this._finalized) return
+Protocol.prototype.finalize = function(cb) {
   this._finalized = true
-  this.push(null)
+  this._header(6, 0)
+  if (cb) cb()
 }
 
 Protocol.prototype._push = function(data, cb) {
-  if (this._finalized) return cb(new Error('Stream has been finalized'))
+  if (this._ended) return cb(new Error('Stream has been finalized'))
   if (this.push(data)) cb()
   else this._ondrain = cb
 }
 
 Protocol.prototype._header = function(type, len) {
-  if (this._finalized) return
+  if (this._ended) return
 
   if (pool.length - used < 50) {
     used = 0
@@ -228,6 +244,20 @@ Protocol.prototype._header = function(type, len) {
   used += varint.encode.bytesWritten
 
   this.push(pool.slice(start, used))
+}
+
+Protocol.prototype._end = function() {
+  if (this._ended) return
+  this._ended = true
+  this.push(null)
+}
+
+Protocol.prototype._finalizer = function(cb) {
+  var self = this
+  return function(err) {
+    self._end()
+    cb(err)
+  }
 }
 
 Protocol.prototype._read = function() {
