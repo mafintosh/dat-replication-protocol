@@ -100,6 +100,12 @@ Protocol.prototype._onheader = function() {
   this._type = varint.decode(this._headerBuffer)
   this._missing = varint.decode(this._headerBuffer, varint.decode.bytesRead)
 
+  if (this._type > 5) {
+    this._nextCalled = true
+    this._stream = new stream.PassThrough()
+    this._stream.resume()
+    return
+  }
   if (this._type === 3) {
     this._nextCalled = false
     this._stream = new stream.PassThrough()
@@ -135,12 +141,14 @@ Protocol.prototype._onbufferdone = function(cb) {
     this.emit('transfer', 'protobuf')
     return this.emit('protobuf', buf, cb) || cb()
     case 4:
-    this.emit('transfer', 'warn')
-    return this.emit('warn', JSON.parse(buf.toString()), cb) || cb()
+    this.emit('transfer', 'conflict')
+    return this.emit('conflict', JSON.parse(buf.toString()), cb) || cb()
     case 5:
     this.emit('ping')
     return cb()
   }
+
+  cb()
 }
 
 Protocol.prototype._rewrite = function(data, cb) {
@@ -179,11 +187,11 @@ Protocol.prototype.blob = function(length, cb) {
   return new Sink(this, cb)
 }
 
-Protocol.prototype.warn = function(message, cb) {
+Protocol.prototype.conflict = function(message, cb) {
   var buf = new Buffer(JSON.stringify(message))
   this._header(4, buf.length)
   this._push(buf, cb || noop)
-  this.emit('transfer', 'warn')
+  this.emit('transfer', 'conflict')
 }
 
 Protocol.prototype.ping = function() {
