@@ -85,6 +85,23 @@ p.pipe(someWritableStream)
 Whenever a document,protobuf etc is being written/parsed a `transfer` event is emitted containing the type.
 This is useful is you want to do progress monitoring etc.
 
+## Finalization
+
+When you are ready to end the protocol stream you should send a `finalize` message.
+This will allow the other end to flush its writes. The stream will be ended after a finalize is received
+
+``` js
+// to receive it
+
+p.on('finalize', function(cb) {
+  console.log('flush everyting...')
+  flush(cb)
+})
+
+// to send it
+p.finalize()
+```
+
 ## Protocol
 
 The binary encoding of the protocol is as follows:
