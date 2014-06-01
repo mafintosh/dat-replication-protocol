@@ -82,6 +82,9 @@ blob.end('world')
 p.pipe(someWritableStream)
 ```
 
+Whenever a document,protobuf etc is being written/parsed a `transfer` event is emitted containing the type.
+This is useful is you want to do progress monitoring etc.
+
 ## Protocol
 
 The binary encoding of the protocol is as follows:
