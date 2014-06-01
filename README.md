@@ -18,8 +18,8 @@ var protocol = require('dat-replication-protocol')
 
 var p = protocol()
 
-p.on('warn', function(warning, cb) {
-  console.log('warning (possible a conflict)', warning)
+p.on('conflict', function(conflict, cb) {
+  console.log('conflict!', conflict)
   cb()
 })
 
@@ -56,8 +56,8 @@ Pipe the protocol instance somewhere else and produce the packets you want to se
 ``` js
 var p = protocol()
 
-p.warning({conflict:true, key:'some-key'}, function() {
-  console.log('warning sent')
+p.conflict({key:'some-key', version:42}, function() {
+  console.log('conflict sent')
 })
 
 p.meta({change:10}, function() {
@@ -104,7 +104,7 @@ type           | description
 1              | document encoded as JSON
 2              | document encoded as protobuf
 3              | blob (should be interpreted as a stream)
-4              | warning encoded as JSON
+4              | conflict encoded as JSON (should contain key, version)
 5              | ping (can be ignored)
 
 
