@@ -103,6 +103,7 @@ Protocol.prototype._onheader = function() {
   if (this._type === 3) {
     this._nextCalled = false
     this._stream = new stream.PassThrough()
+    this.emit('transfer', 'blob')
     if (!this.emit('blob', this._stream, this._next)) {
       this._stream.resume()
       this._next()
@@ -125,12 +126,16 @@ Protocol.prototype._onbufferdone = function(cb) {
 
   switch (this._type) {
     case 0:
+    this.emit('transfer', 'meta')
     return this.emit('meta', JSON.parse(buf.toString()), cb) || cb()
     case 1:
+    this.emit('transfer', 'document')
     return this.emit('document', JSON.parse(buf.toString()), cb) || cb()
     case 2:
+    this.emit('transfer', 'protobuf')
     return this.emit('protobuf', buf, cb) || cb()
     case 4:
+    this.emit('transfer', 'warn')
     return this.emit('warn', JSON.parse(buf.toString()), cb) || cb()
     case 5:
     this.emit('ping')
@@ -152,21 +157,25 @@ Protocol.prototype.meta = function(data, cb) {
   var buf = new Buffer(JSON.stringify(data))
   this._header(0, buf.length)
   this._push(buf, cb || noop)
+  this.emit('transfer', 'meta')
 }
 
 Protocol.prototype.document = function(doc, cb) {
   var buf = new Buffer(JSON.stringify(doc))
   this._header(1, buf.length)
   this._push(buf, cb || noop)
+  this.emit('transfer', 'document')
 }
 
 Protocol.prototype.protobuf = function(buf, cb) {
   this._header(2, buf.length)
   this._push(buf, cb || noop)
+  this.emit('transfer', 'protobuf')
 }
 
 Protocol.prototype.blob = function(length, cb) {
   this._header(3, length)
+  this.emit('transfer', 'blob')
   return new Sink(this, cb)
 }
 
@@ -174,6 +183,7 @@ Protocol.prototype.warn = function(message, cb) {
   var buf = new Buffer(JSON.stringify(message))
   this._header(4, buf.length)
   this._push(buf, cb || noop)
+  this.emit('transfer', 'warn')
 }
 
 Protocol.prototype.ping = function() {
