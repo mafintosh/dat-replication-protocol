@@ -30,6 +30,7 @@ var Protocol = function() {
   this.blobs = 0
   this.documents = 0
   this.bytes = 0
+  this.destroyed = false
 
   this._msbs = 2
   this._missing = 0
@@ -62,6 +63,8 @@ util.inherits(Protocol, stream.Duplex)
 // decode
 
 Protocol.prototype._write = function(data, enc, cb) {
+  if (this.destroyed) return cb()
+
   if (this._missing) return this._forward(data, cb)
 
   for (var i = 0; i < data.length; i++) {
@@ -78,7 +81,16 @@ Protocol.prototype._write = function(data, enc, cb) {
   cb()
 }
 
+Protocol.prototype.destroy = function(err) {
+  if (this.destroyed) return
+  this.destroyed = true
+  if (err) this.emit('error', err)
+  this.emit('close')
+}
+
 Protocol.prototype._forward = function(data, cb) {
+  if (this.destroyed) return cb()
+
   if (data.length > this._missing) {
     var overflow = data.slice(this._missing)
     data = data.slice(0, this._missing)
@@ -106,6 +118,8 @@ Protocol.prototype._forward = function(data, cb) {
 }
 
 Protocol.prototype._onheader = function(cb) {
+  if (this.destroyed) return cb()
+
   this._headerPointer = 0
   this._msbs = 2
 
@@ -149,12 +163,16 @@ Protocol.prototype._onheader = function(cb) {
 }
 
 Protocol.prototype._onstreamdone = function(cb) {
+  if (this.destroyed) return cb()
+
   this._stream = null
   if (this._nextCalled) return cb()
   this._cb = cb
 }
 
 Protocol.prototype._onbufferdone = function(cb) {
+  if (this.destroyed) return cb()
+
   var buf = this._buffer
   this._buffer = null
 
