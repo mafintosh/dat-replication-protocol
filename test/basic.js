@@ -12,7 +12,8 @@ tape('encode + decode changes', function(t) {
         from: 0,
         to: 1,
         change: 1,
-        value: new Buffer('hello')
+        value: new Buffer('hello'),
+        subset: ''
       })
       t.end()
     }))
@@ -99,7 +100,8 @@ tape('encode + decode blob and changes', function(t) {
           from: 0,
           to: 1,
           change: 1,
-          value: new Buffer('hello')
+          value: new Buffer('hello'),
+          subset: ''
         })
       }))
     } else {
