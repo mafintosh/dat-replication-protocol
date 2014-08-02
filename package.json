@@ -24,11 +24,11 @@
   },
   "homepage": "https://github.com/mafintosh/dat-replication-protocol",
   "dependencies": {
-    "varint": "^1.2.0"
+    "protocol-buffers": "^2.1.4",
+    "varint": "^3.0.0"
   },
   "devDependencies": {
     "concat-stream": "^1.4.5",
-    "tape": "^2.13.1",
-    "through2": "^0.4.2"
+    "tape": "^2.13.1"
   }
 }

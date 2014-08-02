@@ -1,0 +1,8 @@
+message Change {
+  optional string subset = 1
+  required string key = 2;
+  required uint32 change = 3;
+  required uint32 from = 4;
+  required uint32 to = 5;
+  optional bytes value = 6;
+}

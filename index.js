@@ -1,301 +1,377 @@
 var stream = require('stream')
-var varint = require('varint')
 var util = require('util')
+var varint = require('varint')
+var messages = require('./messages')
 
-var PING = new Buffer('ping')
-
-var pool = new Buffer(5012)
-var used = 0
 var noop = function() {}
 
-var Sink = function(parent, cb) {
+var POOL = new Buffer(65536)
+var used = 0
+
+// read proxy
+
+var ReadStream = function(parent, objectMode) {
+  stream.Readable.call(this, objectMode ? {objectMode:true, highWaterMark:16} : null)
+
+  this.destroyed = false
   this._parent = parent
-  if (cb) this.once('finish', cb)
-  stream.Writable.call(this)
+  this._onflush = null
 }
 
-util.inherits(Sink, stream.Writable)
+util.inherits(ReadStream, stream.Readable)
 
-Sink.prototype._write = function(data, enc, cb) {
-  this._parent._push(data, cb)
+ReadStream.prototype.destroy = function(err) {
+  if (this.destroyed) return
+  this.destroyed = true
+  if (err) this.emit('error', err)
+  this.emit('close')
+  this._parent.destroy()
 }
 
-var Protocol = function() {
-  if (!(this instanceof Protocol)) return new Protocol()
+ReadStream.prototype._push = function(data, cb) {
+  if (this.push(data)) cb()
+  else this._onflush = cb
+}
+
+ReadStream.prototype._end = function() {
+  this.push(null)
+}
+
+ReadStream.prototype._read = function() {
+  var onflush = this._onflush
+  this._onflush = null
+  if (onflush) onflush()
+}
+
+// write proxy
+
+var WriteStream = function(parent, objectMode) {
+  stream.Writable.call(this, objectMode ? {objectMode:true, highWaterMark:16} : null)
+
+  this.corked = 0
+  this.destroyed = false
+  this._cargs = null
+  this._parent = parent
+  this._objectMode = objectMode
+}
+
+util.inherits(WriteStream, stream.Writable)
+
+WriteStream.prototype.destroy = function(err) {
+  if (this.destroyed) return
+  this.destroyed = true
+  if (err) this.emit('error', err)
+  this.emit('close')
+  this._parent.destroy()
+}
+
+WriteStream.prototype.cork = function() {
+  this.corked++
+}
+
+WriteStream.prototype.uncork = function() {
+  if (!this.corked || --this.corked) return
+
+  var args = this._cargs
+  this._cargs = null
+  if (args) this._write.apply(this, args)
+}
+
+WriteStream.prototype._write = function(data, enc, cb) {
+  if (this.corked) this._cargs = arguments
+  else if (this._objectMode) this._parent._pushChange(data, cb)
+  else this._parent._pushBlob(data, cb)
+}
+
+// protocol stream
+
+var Protocol = function(onstream) {
+  if (!(this instanceof Protocol)) return new Protocol(onstream)
   stream.Duplex.call(this)
 
-  var self = this
-
-  this.conflicts = 0
-  this.blobs = 0
-  this.documents = 0
-  this.bytes = 0
   this.destroyed = false
 
-  this._msbs = 2
+  this.changesWritten = 0
+  this.blobsWritten = 0
+  this.bytesWritten = 0
+
+  this.changesRead = 0
+  this.blobsRead = 0
+  this.bytesRead = 0
+
+  this._rblob = null
+  this._rchanges = null
+
+  this._wchanges = null
+  this._wblobs = []
+
+  this._onreadflush = null
+  this._onwriteflush = null
+  this._onstream = onstream || noop
+
+  this._id = 0
   this._missing = 0
   this._buffer = null
-  this._stream = null
+  this._bufferh = new Buffer(50)
+  this._ptr = 0
 
-  this._headerPointer = 0
-  this._headerBuffer = new Buffer(50)
-  this._ondrain = null
-  this._ended = false
-  this._finalized = false
+  this._pending = 0
 
-  this._cb = null
-  this._nextCalled = false
-  this._next = function() {
-    self._nextCalled = true
-    if (!self._cb) return
-    var cb = self._cb
-    self._cb = null
-    cb()
+  var self = this
+  var flush = function() {
+    if (--self._pending) return
+    var onflush = self._onwriteflush
+    self._onwriteflush = null
+    if (onflush) onflush()
   }
 
-  this.on('finish', function() {
-    this._end() // no half open
-  })
+  this._flush = flush
 }
 
 util.inherits(Protocol, stream.Duplex)
 
-// decode
+Protocol.CHANGES = 1
+Protocol.BLOB = 2
 
-Protocol.prototype._write = function(data, enc, cb) {
-  if (this.destroyed) return cb()
+// public interface
 
-  if (this._missing) return this._forward(data, cb)
+Protocol.prototype.createBlobStream = function(length) {
+  if (!length) throw new Error('Length is required')
 
-  for (var i = 0; i < data.length; i++) {
-    if (!(data[i] & 0x80)) this._msbs--
+  var ws = new WriteStream(this, false)
 
-    this._headerBuffer[this._headerPointer++] = data[i]
-    if (this._msbs) continue
+  if (this._wchanges) this._wchanges.cork()
+  if (this._wblobs.length) ws.cork()
 
-    if (i === data.length-1) this._onheader(cb)
-    else this._onheader(this._rewrite(data.slice(i+1), cb))
-    return
-  }
+  // we need to wait for the stream to be uncorked before writing the header
+  // this is a bit hackish but it works
+  ws.write(this._header(Protocol.BLOB, length))
 
-  cb()
+  this.blobsWritten++
+  this._wblobs.push(ws)
+
+  var self = this
+  ws.on('finish', function() {
+    if (self._wblobs.shift() !== ws) throw new Error('Blob assertion failed')
+    if (self._wblobs.length) self._wblobs[0].uncork()
+    if (self._wchanges) self._wchanges.uncork()
+  })
+
+  return ws
+}
+
+Protocol.prototype.createChangesStream = function() {
+  if (this._wchanges) throw new Error('Only one changes stream can be created')
+  var ws = new WriteStream(this, true)
+  this._wchanges = ws
+  if (this._wblobs.length) ws.cork()
+
+  var self = this
+  ws.on('finish', function() {
+    if (self._readableState.ended) return
+    var end = self._header(Protocol.CHANGES, 0)
+    self.bytesWritten += end.length
+    self.push(end)
+  })
+
+  return ws
 }
 
 Protocol.prototype.destroy = function(err) {
   if (this.destroyed) return
   this.destroyed = true
+
+  if (this._wchanges) this._wchanges.destroy()
+  if (this._rchanges) this._rchanges.destroy()
+
+  for (var i = 0; i < this._wblobs.length; i++) this._wblobs[i].destroy()
+  if (this._rblob) this._rblob.destroy()
+
   if (err) this.emit('error', err)
   this.emit('close')
 }
 
-Protocol.prototype._forward = function(data, cb) {
-  if (this.destroyed) return cb()
-
-  if (data.length > this._missing) {
-    var overflow = data.slice(this._missing)
-    data = data.slice(0, this._missing)
-    cb = this._rewrite(overflow, cb)
-  }
-
-  this.bytes += data.length
-  this.emit('update')
-
-  if (this._buffer) {
-    data.copy(this._buffer, this._buffer.length - this._missing)
-    this._missing -= data.length
-
-    if (!this._missing) return this._onbufferdone(cb)
-    return cb()
-  }
-
-  this._missing -= data.length
-
-  if (this._missing) return this._stream.write(data, cb)
-
-  this._stream.write(data)
-  this._stream.end()
-  this._onstreamdone(cb)
-}
-
-Protocol.prototype._onheader = function(cb) {
-  if (this.destroyed) return cb()
-
-  this._headerPointer = 0
-  this._msbs = 2
-
-  this._type = varint.decode(this._headerBuffer)
-  this._missing = varint.decode(this._headerBuffer, varint.decode.bytesRead)
-
-  switch (this._type) {
-    case 0:
-    case 1:
-    case 2:
-    case 4:
-    this._buffer = new Buffer(this._missing)
-    return cb()
-
-    case 3:
-    this._nextCalled = false
-    this._stream = new stream.PassThrough()
-    this.blobs++
-    this.emit('update')
-    if (!this.emit('blob', this._stream, this._next)) {
-      this._stream.resume()
-      this._next()
-    }
-    return cb()
-
-    case 5:
-    this.emit('ping')
-    return cb()
-
-    case 6:
-    cb = this._finalizer(cb)
-    this.emit('finalize', cb) || cb()
-    return
-
-    default:
-    this._nextCalled = true
-    this._stream = new stream.PassThrough()
-    this._stream.resume()
-    cb()
-  }
-}
-
-Protocol.prototype._onstreamdone = function(cb) {
-  if (this.destroyed) return cb()
-
-  this._stream = null
-  if (this._nextCalled) return cb()
-  this._cb = cb
-}
-
-Protocol.prototype._onbufferdone = function(cb) {
-  if (this.destroyed) return cb()
-
-  var buf = this._buffer
-  this._buffer = null
-
-  switch (this._type) {
-    case 0:
-    return this.emit('meta', JSON.parse(buf.toString()), cb) || cb()
-    case 1:
-    this.documents++
-    this.emit('update')
-    return this.emit('document', JSON.parse(buf.toString()), cb) || cb()
-    case 2:
-    this.documents++
-    this.emit('update')
-    return this.emit('protobuf', buf, cb) || cb()
-    case 4:
-    this.conflicts++
-    this.emit('update')
-    return this.emit('conflict', JSON.parse(buf.toString()), cb) || cb()
-  }
-
-  cb()
-}
-
-Protocol.prototype._rewrite = function(data, cb) {
-  var self = this
-  return function(err) {
-    if (err) return cb(err)
-    self._write(data, null, cb)
-  }
-}
-
-// encode
-
-Protocol.prototype.meta = function(data, cb) {
-  var buf = new Buffer(JSON.stringify(data))
-  this._header(0, buf.length)
-  this._push(buf, cb || noop)
-}
-
-Protocol.prototype.document = function(doc, cb) {
-  var buf = new Buffer(JSON.stringify(doc))
-  this.documents++
-  this._header(1, buf.length)
-  this._push(buf, cb || noop)
-}
-
-Protocol.prototype.protobuf = function(buf, cb) {
-  this.documents++
-  this._header(2, buf.length)
-  this._push(buf, cb || noop)
-}
-
-Protocol.prototype.blob = function(length, cb) {
-  this.blobs++
-  this._header(3, length)
-  this.emit('update')
-  return new Sink(this, cb)
-}
-
-Protocol.prototype.conflict = function(message, cb) {
-  var buf = new Buffer(JSON.stringify(message))
-  this.conflicts++
-  this._header(4, buf.length)
-  this._push(buf, cb || noop)
-}
-
-Protocol.prototype.ping = function(cb) {
-  this._header(5, 0)
-  if (cb) cb()
-}
-
-Protocol.prototype.finalize = function(cb) {
-  this._finalized = true
-  this._header(6, 0)
-  if (cb) cb()
-}
-
-Protocol.prototype._push = function(data, cb) {
-  if (this._ended) return cb(new Error('Stream has been finalized'))
-  if (this.push(data)) cb()
-  else this._ondrain = cb
-  this.bytes += data.length
-  this.emit('update')
-}
-
-Protocol.prototype._header = function(type, len) {
-  if (this._ended) return
-
-  if (pool.length - used < 50) {
-    used = 0
-    pool = new Buffer(5012)
-  }
-
-  var start = used
-
-  varint.encode(type, pool, used)
-  used += varint.encode.bytesWritten
-
-  varint.encode(len, pool, used)
-  used += varint.encode.bytesWritten
-
-  this.push(pool.slice(start, used))
-}
-
-Protocol.prototype._end = function() {
-  if (this._ended) return
-  this._ended = true
+Protocol.prototype.finalize = function() {
   this.push(null)
 }
 
-Protocol.prototype._finalizer = function(cb) {
-  var self = this
-  return function(err) {
-    self._end()
-    cb(err)
+// encoder
+
+Protocol.prototype._header = function(id, len) {
+  if (POOL.length - used < 30) {
+    POOL = new Buffer(POOL.length)
+    used = 0
   }
+
+  var offset = used
+
+  varint.encode(len+1, POOL, used)
+  used += varint.encode.bytes
+  POOL[used++] = id
+
+  return POOL.slice(offset, used)
+}
+
+Protocol.prototype._pushChange = function(data, cb) {
+  data = messages.Change.encode(data)
+  var header = this._header(Protocol.CHANGES, data.length)
+
+  this.changesWritten++
+  this.bytesWritten += header.length
+  this.push(header)
+  this._push(data, cb)
+}
+
+Protocol.prototype._pushBlob = function(data, cb) {
+  this._push(data, cb)
+}
+
+Protocol.prototype._push = function(data, cb) {
+  this.bytesWritten += data.length
+  if (this.push(data)) cb()
+  else this._onreadflush = cb
 }
 
 Protocol.prototype._read = function() {
-  if (!this._ondrain) return
-  var ondrain = this._ondrain
-  this._ondrain = null
-  ondrain()
+  var onflush = this._onreadflush
+  this._onreadflush = null
+  if (onflush) onflush()
+}
+
+// decoder
+
+Protocol.prototype._write = function(data, enc, cb) {
+  this.bytesRead += data.length
+
+  while (data && data.length && !this.destroyed) {
+    switch (this._id) {
+      case 0:
+      data = this._onheader(data)
+      // handle special case - end of changes
+      if (this._id === 1 && !this._missing) this._onchangedata(null)
+      break
+
+      case 1:
+      data = this._onchanges(data)
+      break
+
+      case 2:
+      data = this._onblob(data)
+      break
+
+      default:
+      this.destroy(new Error('Protocol error, unknown type: '+this._id))
+      return
+    }
+  }
+
+  if (!this._pending) cb()
+  else this._onwriteflush = cb
+}
+
+Protocol.prototype._onchangedata = function(data) {
+  this._id = 0
+  this._ptr = 0
+  this._buffer = null
+
+  if (data === null) {
+    this._rchanges.push(null)
+    return
+  }
+
+  data = messages.Change.decode(data)
+  this.changesRead++
+  this._rchanges._push(data, this._up())
+}
+
+Protocol.prototype._onblobend = function() {
+  this._rblob._end()
+  this._id = 0
+  this._ptr = 0
+  this._rblob = null
+}
+
+Protocol.prototype._onchanges = function(data) {
+  if (!this._rchanges) {
+    this._rchanges = new ReadStream(this, true)
+    this._onstream(Protocol.CHANGES, this._rchanges)
+  }
+
+  if (!this._buffer) { // fast track
+    if (data.length === this._missing) {
+      this._onchangedata(data)
+      return null
+    }
+
+    if (data.length > this._missing) {
+      var overflow = data.slice(this._missing)
+      this._onchangedata(data.slice(0, this._missing))
+      return overflow
+    }
+
+    this._buffer = new Buffer(this._missing)
+  }
+
+  if (data.length < this._missing) {
+    data.copy(this._buffer, this._ptr)
+    this._ptr += data.length
+    this._missing -= data.length
+    return null
+  }
+
+  if (data.length === this._missing) {
+    data.copy(this._buffer, this._ptr)
+    this._onchangedata(this._buffer)
+    return null
+  }
+
+  var overflow = data.slice(this._missing)
+  data.copy(this._buffer, this._ptr)
+  this._onchangedata(this._buffer)
+  return overflow
+}
+
+Protocol.prototype._onblob = function(data) {
+  if (!this._rblob) {
+    this.blobsRead++
+    this._rblob = new ReadStream(this, false)
+    this._onstream(Protocol.BLOB, this._rblob)
+  }
+
+  if (data.length === this._missing) {
+    this._rblob._push(data, this._up())
+    this._onblobend()
+    return null
+  }
+
+  if (data.length < this._missing) {
+    this._missing -= data.length
+    this._rblob._push(data, this._up())
+    return null
+  }
+
+  var overflow = data.slice(this._missing)
+  this._rblob._push(data.slice(0, this._missing), this._up())
+  this._onblobend()
+  return overflow
+}
+
+Protocol.prototype._onheader = function(data) {
+  for (var i = 0; i < data.length; i++) {
+    this._bufferh[this._ptr++] = data[i]
+    if (this._ptr > 1 && !(this._bufferh[this._ptr-2] & 0x80)) {
+      this._missing = varint.decode(this._bufferh)-1
+      this._id = data[i]
+      this._ptr = 0
+      return data.slice(i+1)
+    }
+  }
+  return null
+}
+
+Protocol.prototype._up = function() {
+  this._pending++
+  return this._flush
 }
 
 module.exports = Protocol
