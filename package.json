@@ -1,6 +1,6 @@
 {
   "name": "dat-replication-protocol",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "streaming implementation of the dat replication protocol",
   "main": "index.js",
   "scripts": {
