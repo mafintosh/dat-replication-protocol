@@ -226,10 +226,17 @@ Protocol.prototype._pushBlob = function(data, cb) {
   this._push(data, cb)
 }
 
+var join = function(a, b) {
+  return function() {
+    b()
+    a()
+  }
+}
+
 Protocol.prototype._push = function(data, cb) {
   this.bytesWritten += data.length
   if (this.push(data)) cb()
-  else this._onreadflush = cb
+  else this._onreadflush = this._onreadflush ? join(cb, this._onreadflush) : cb
 }
 
 Protocol.prototype._read = function() {
