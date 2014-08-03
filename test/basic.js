@@ -3,25 +3,22 @@ var concat = require('concat-stream')
 var protocol = require('../')
 
 tape('encode + decode changes', function(t) {
-  var p = protocol(function(type, stream) {
-    t.same(type, protocol.CHANGES)
-    stream.pipe(concat(function(changes) {
-      t.same(changes.length, 1)
-      t.same(changes[0], {
-        key: 'key',
-        from: 0,
-        to: 1,
-        change: 1,
-        value: new Buffer('hello'),
-        subset: ''
-      })
-      t.end()
-    }))
+  var e = protocol.encode()
+  var d = protocol.decode()
+
+  d.change(function(change) {
+    t.same(change, {
+      key: 'key',
+      from: 0,
+      to: 1,
+      change: 1,
+      value: new Buffer('hello'),
+      subset: ''
+    })
+    t.end()
   })
 
-  var changes = p.createChangesStream()
-
-  changes.write({
+  e.change({
     key: 'key',
     from: 0,
     to: 1,
@@ -29,28 +26,28 @@ tape('encode + decode changes', function(t) {
     value: new Buffer('hello')
   })
 
-  changes.end()
-
-  p.pipe(p)
+  e.pipe(d)
 })
 
 tape('encode + decode blob', function(t) {
-  var p = protocol(function(type, stream) {
-    t.same(type, protocol.BLOB)
-    stream.pipe(concat(function(data) {
+  var e = protocol.encode()
+  var d = protocol.decode()
+
+  d.blob(function(blob) {
+    blob.pipe(concat(function(data) {
       t.same(data.length, 11)
       t.same(data, new Buffer('hello world'))
       t.end()
     }))
   })
 
-  var blob = p.createBlobStream(11)
+  var blob = e.blob(11)
 
   blob.write('hello ')
   blob.write('world')
   blob.end()
 
-  p.pipe(p)
+  e.pipe(d)
 })
 
 tape('encode + decode mixed blobs', function(t) {
@@ -59,19 +56,22 @@ tape('encode + decode mixed blobs', function(t) {
     new Buffer('HELLO WORLD')
   ]
 
-  t.plan(6)
+  t.plan(4)
 
-  var p = protocol(function(type, stream) {
-    t.same(type, protocol.BLOB)
+  var e = protocol.encode()
+  var d = protocol.decode()
+
+  d.blob(function(blob, cb) {
     var e = expects.shift()
-    stream.pipe(concat(function(data) {
+    blob.pipe(concat(function(data) {
       t.same(data.length, e.length)
       t.same(data, e)
+      cb()
     }))
   })
 
-  var b1 = p.createBlobStream(11)
-  var b2 = p.createBlobStream(11)
+  var b1 = e.blob(11)
+  var b2 = e.blob(11)
 
   b1.write('hello ')
   b2.write('HELLO ')
@@ -80,44 +80,42 @@ tape('encode + decode mixed blobs', function(t) {
   b1.end()
   b2.end()
 
-  p.pipe(p)
+  e.pipe(d)
 })
 
 tape('encode + decode blob and changes', function(t) {
-  t.plan(4)
+  t.plan(3)
 
-  var p = protocol(function(type, stream) {
-    if (type === protocol.BLOB) {
-      stream.pipe(concat(function(data) {
-        t.same(data.length, 11)
-        t.same(data, new Buffer('hello world'))
-      }))
-    } else if (type === protocol.CHANGES) {
-      stream.pipe(concat(function(changes) {
-        t.same(changes.length, 1)
-        t.same(changes[0], {
-          key: 'key',
-          from: 0,
-          to: 1,
-          change: 1,
-          value: new Buffer('hello'),
-          subset: ''
-        })
-      }))
-    } else {
-      t.ok(false)
-    }
+  var e = protocol.encode()
+  var d = protocol.decode()
+
+  d.blob(function(blob, cb) {
+    blob.pipe(concat(function(data) {
+      t.same(data.length, 11)
+      t.same(data, new Buffer('hello world'))
+      cb()
+    }))
   })
 
-  var blob = p.createBlobStream(11)
+  d.change(function(change, cb) {
+    t.same(change, {
+      key: 'key',
+      from: 0,
+      to: 1,
+      change: 1,
+      value: new Buffer('hello'),
+      subset: ''
+    })
+    cb()
+  })
+
+  var blob = e.blob(11)
 
   blob.write('hello ')
   blob.write('world')
   blob.end()
 
-  var changes = p.createChangesStream()
-
-  changes.write({
+  e.change({
     key: 'key',
     from: 0,
     to: 1,
@@ -125,7 +123,5 @@ tape('encode + decode blob and changes', function(t) {
     value: new Buffer('hello')
   })
 
-  changes.end()
-
-  p.pipe(p)
+  e.pipe(d)
 })
