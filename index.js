@@ -10,6 +10,13 @@ var used = 0
 
 // read proxy
 
+var join = function(a, b) {
+  return function() {
+    b()
+    a()
+  }
+}
+
 var ReadStream = function(parent, objectMode) {
   stream.Readable.call(this, objectMode ? {objectMode:true, highWaterMark:16} : null)
 
@@ -30,7 +37,7 @@ ReadStream.prototype.destroy = function(err) {
 
 ReadStream.prototype._push = function(data, cb) {
   if (this.push(data)) cb()
-  else this._onflush = cb
+  else this._onflush = this._onflush ? join(cb, this._onflush) : cb
 }
 
 ReadStream.prototype._end = function() {
@@ -224,13 +231,6 @@ Protocol.prototype._pushChange = function(data, cb) {
 
 Protocol.prototype._pushBlob = function(data, cb) {
   this._push(data, cb)
-}
-
-var join = function(a, b) {
-  return function() {
-    b()
-    a()
-  }
 }
 
 Protocol.prototype._push = function(data, cb) {
