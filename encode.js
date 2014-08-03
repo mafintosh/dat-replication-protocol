@@ -116,8 +116,9 @@ Encoder.prototype.change = function(change, cb) {
   this._push(change, cb || noop)
 }
 
-Encoder.prototype.finalize = function() {
+Encoder.prototype.finalize = function(cb) {
   if (!this._readableState.ended) this.push(null)
+  if (cb) cb()
 }
 
 Encoder.prototype._header = function(len, id) {

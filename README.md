@@ -32,6 +32,11 @@ decode.blob(function(blob, cb) {
   })
 })
 
+decode.finalize(function(cb) {
+  // should finalize stuff
+  cb()
+})
+
 // write changes data
 encode.change({
   key: 'some-row-key',
@@ -48,6 +53,8 @@ var blob = encode.blob(12) // 12 is the length of the blob
 blob.write('hello ')
 blob.write('world\n')
 blob.end()
+
+encode.finalize() // end the encode stream
 
 // set up the pipeline
 e.pipe(d)

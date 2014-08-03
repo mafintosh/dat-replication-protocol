@@ -3,6 +3,8 @@ var varint = require('varint')
 var util = require('util')
 var messages = require('./messages')
 
+var SIGNAL_FLUSH = new Buffer([0])
+
 var BlobStream = function(parent) {
   stream.Readable.call(this)
 
@@ -45,6 +47,10 @@ BlobStream.prototype._read = function() {
   if (ondrain) ondrain()
 }
 
+var defaultFinalize = function(cb) {
+  cb()
+}
+
 var defaultChange = function(change, cb) {
   cb()
 }
@@ -76,6 +82,7 @@ var Decoder = function() {
 
   this._onchange = defaultChange
   this._onblob = defaultBlob
+  this._onfinalize = defaultFinalize
 
   var self = this
 
@@ -111,9 +118,23 @@ Decoder.prototype.blob = function(fn) {
 }
 
 Decoder.prototype._write = function(data, enc, cb) {
+  if (data === SIGNAL_FLUSH) {
+    this._onfinalize(cb)
+    return
+  }
+
   this.bytes += data.length
   this._overflow = data
   this._consume(cb)
+}
+
+Decoder.prototype.end = function(data, enc, cb) {
+  if (typeof data === 'function') return this.end(null, null, data)
+  if (typeof enc === 'function') return this.end(data, null, enc)
+
+  if (data) this.write(data)
+  this.write(SIGNAL_FLUSH)
+  stream.Writable.prototype.end.call(this, cb)
 }
 
 Decoder.prototype._consume = function(cb) {
