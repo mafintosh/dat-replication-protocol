@@ -58,6 +58,7 @@ var Decoder = function() {
   if (!(this instanceof Decoder)) return new Decoder()
   stream.Writable.call(this)
 
+  this.destroyed = false
   this.bytes = 0
   this.changes = 0
   this.blobs = 0
@@ -92,6 +93,14 @@ var Decoder = function() {
 }
 
 util.inherits(Decoder, stream.Writable)
+
+Decoder.prototype.destroy = function(err) {
+  if (this.destroyed) return
+  this.destroyed = true
+  if (this._blob) this._blob.destroy()
+  if (err) this.emit('error', err)
+  this.emit('close')
+}
 
 Decoder.prototype.change = function(fn) {
   this._onchange = fn
