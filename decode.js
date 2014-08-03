@@ -92,7 +92,7 @@ var Decoder = function() {
   }
 
   this._down = function() {
-    if (--self._pending) return
+    if (--self._pending > 0) return
     var onflush = self._onflush
     self._onflush = null
     if (onflush) self._consume(onflush)
