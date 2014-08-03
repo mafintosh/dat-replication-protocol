@@ -93,6 +93,7 @@ Encoder.prototype.blob = function(len, cb) {
     if (self._blobs.shift() !== ws) throw new Error('Blob assertion failed')
     if (self._blobs.length) self._blobs[0].uncork()
     else while (!self._blobs.length && self._changes.length) self.change.apply(self, self._changes.shift())
+    if (cb) cb()
   })
 
   return ws

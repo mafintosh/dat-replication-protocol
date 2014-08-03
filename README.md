@@ -14,42 +14,44 @@ npm install dat-replication-protocol
 ``` js
 var protocol = require('dat-replication-protocol')
 
-var p = protocol(function(type, stream) {
-  if (type === protocol.CHANGES) {
-    // receiving the changes stream
-    stream.on('data', function(change) {
-      console.log('change:', change)
-    })
-  }
-  if (type === protocol.BLOB) {
-    // receiving a blob stream
-    stream.pipe(process.stdout)
-  }
+var decode = protocol.decode()
+var encode = protocol.encode()
+
+decode.change(function(change, cb) {
+  // received a change
+  cb()
 })
 
-var changes = p.createChangesStream()
+decode.blob(function(blob, cb) {
+  // received a blob stream
+  blob.on('data', function(data) {
+    console.log(data)
+  })
+  blob.on('end', function() {
+    cb()
+  })
+})
 
-// write changes data to this stream
-changes.write({
+// write changes data
+encode.change({
   key: 'some-row-key',
   change: 0,
   from: 0,
   to: 1,
   value: new Buffer('some binary value')
+}, functoin() {
+  console.log('change was flushed')
 })
 
-var blob = p.createBlobStream(12) // 12 is the length of the blob
+var blob = encode.blob(12) // 12 is the length of the blob
 
 blob.write('hello ')
 blob.write('world\n')
 blob.end()
 
-// for testing lets just pipe it to ourselves
-p.pipe(p)
+// set up the pipeline
+e.pipe(d)
 ```
-
-This works similarly to the [multiplex module](https://github.com/maxogden/multiplex) except
-this uses length prefixed streams for the blobs streams
 
 ## Wire format
 
