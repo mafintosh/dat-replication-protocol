@@ -87,7 +87,7 @@ var Decoder = function() {
     if (--self._pending) return
     var onflush = self._onflush
     self._onflush = null
-    if (onflush) onflush()
+    if (onflush) self._consume(onflush)
   }
 }
 
@@ -108,7 +108,7 @@ Decoder.prototype._write = function(data, enc, cb) {
 }
 
 Decoder.prototype._consume = function(cb) {
-  while (this._overflow && !this.destroyed && this._pending <= 0) {
+  while (this._overflow && this._pending <= 0 && !this.destroyed) {
     switch (this._id) {
       case 0:
       this._overflow = this._onheader(this._overflow)
