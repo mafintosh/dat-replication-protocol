@@ -117,6 +117,10 @@ Decoder.prototype.blob = function(fn) {
   this._onblob = fn
 }
 
+Decoder.prototype.finalize = function(fn) {
+  this._onfinalize = fn
+}
+
 Decoder.prototype._write = function(data, enc, cb) {
   if (data === SIGNAL_FLUSH) {
     this._onfinalize(cb)
